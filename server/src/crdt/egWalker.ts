@@ -14,6 +14,7 @@ export class EgWalker {
   private seq: CRDTSequence;
   private prepareVersion: EventId[];
   private effectVersion: EventId[];
+  private deleteTargets: Map<EventId, EventId> = new Map();
 
   constructor() {
     this.graph = new EventGraph();
@@ -31,19 +32,25 @@ export class EgWalker {
     );
 
     const retreatOrdered = this.graph
-      .topologicalSort(new Set(toRetreat))
-      .reverse();
+        .topologicalSort(new Set(toRetreat))
+        .reverse();
 
     for (const eventId of retreatOrdered) {
-      const e = this.graph.getEvent(eventId)!;
-      this.seq.retreat(eventId, e.op.type);
+        const e = this.graph.getEvent(eventId)!;
+        const targetId = e.op.type === 'delete'
+            ? this.deleteTargets.get(eventId)!
+            : eventId;
+        this.seq.retreat(targetId, e.op.type);
     }
 
     const advanceOrdered = this.graph.topologicalSort(new Set(toAdvance));
 
     for (const eventId of advanceOrdered) {
-      const e = this.graph.getEvent(eventId)!;
-      this.seq.advance(eventId, e.op.type);
+        const e = this.graph.getEvent(eventId)!;
+        const targetId = e.op.type === 'delete'
+            ? this.deleteTargets.get(eventId)!
+            : eventId;
+        this.seq.advance(targetId, e.op.type);
     }
 
     let transformedOp: TransformedOp | null = null;
@@ -57,7 +64,7 @@ export class EgWalker {
     this.prepareVersion = [event.id];
     this.effectVersion = [event.id];
 
-    this.checkAndClearState();
+    //this.checkAndClearState();
 
     return { transformedOp };
   }
@@ -107,6 +114,8 @@ export class EgWalker {
 
     const recordIdx = this.seq.findByPrepareIndex(op.index);
     const record = this.seq.getRecords()[recordIdx];
+
+    this.deleteTargets.set(event.id, record.eventId);
 
     record.sp = record.sp + 1;
 
