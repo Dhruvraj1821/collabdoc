@@ -12,7 +12,6 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
-
 app.use('/api/auth', authRouter);
 
 app.listen(env.PORT, () => {
