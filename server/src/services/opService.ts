@@ -28,6 +28,7 @@ export async function getNextSequenceNum(docId: string): Promise<number> {
 
   return (latest?.sequenceNum ?? 0) + 1; // if no events till now start at 1
 }
+// the getNextSequenceNum  has a production hazard - two events within same millisecond can cause race condition . to solve this we need to fix per-document sequencing. using database transaction with a lock
 
 export async function loadEvents(
   docId: string,
