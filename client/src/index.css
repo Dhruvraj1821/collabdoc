@@ -1,0 +1,439 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --green: #00ff41;
+  --green-dim: #00cc33;
+  --green-glow: rgba(0, 255, 65, 0.15);
+  --green-glow-strong: rgba(0, 255, 65, 0.35);
+  --black: #000000;
+  --dark: #050505;
+  --dark-2: #0a0a0a;
+  --dark-3: #111111;
+  --gray: #1a1a1a;
+  --text-dim: #006620;
+  --text-muted: #004415;
+  --red: #ff0040;
+  --amber: #ffaa00;
+}
+
+* {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace !important;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--black);
+  color: var(--green);
+  margin: 0;
+  padding: 0;
+  cursor: crosshair;
+}
+
+/* Scanline overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* CRT flicker animation */
+@keyframes flicker {
+  0%, 95%, 100% { opacity: 1; }
+  96% { opacity: 0.85; }
+  97% { opacity: 1; }
+  98% { opacity: 0.9; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 1px); }
+  40% { transform: translate(2px, -1px); }
+  60% { transform: translate(-1px, 2px); }
+  80% { transform: translate(1px, -2px); }
+  100% { transform: translate(0); }
+}
+
+@keyframes scandown {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes typeIn {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+/* ── Terminal components ──────────────────────────────────────────────────── */
+
+.terminal-screen {
+  min-height: 100vh;
+  background: var(--black);
+  animation: flicker 8s infinite;
+  position: relative;
+}
+
+.terminal-window {
+  border: 1px solid var(--green);
+  background: var(--dark);
+  box-shadow:
+    0 0 10px var(--green-glow),
+    0 0 40px rgba(0, 255, 65, 0.05),
+    inset 0 0 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+.terminal-window::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  opacity: 0.6;
+}
+
+.terminal-header {
+  border-bottom: 1px solid var(--green-dim);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--dark-2);
+}
+
+.terminal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--green-dim);
+}
+
+.terminal-title {
+  color: var(--green-dim);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.terminal-logo {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--green);
+  text-shadow: 0 0 20px var(--green-glow-strong);
+  letter-spacing: 0.1em;
+  animation: flicker 4s infinite;
+}
+
+.terminal-logo:hover {
+  animation: glitch 0.3s ease, flicker 4s infinite;
+}
+
+/* Cursor blink */
+.cursor::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+  color: var(--green);
+}
+
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+
+.terminal-input {
+  background: var(--black) !important;
+  border: 1px solid var(--green-dim) !important;
+  color: var(--green) !important;
+  padding: 10px 12px !important;
+  font-size: 13px !important;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  caret-color: var(--green);
+}
+
+.terminal-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+.terminal-input:focus {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 8px var(--green-glow) !important;
+}
+
+.terminal-label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+
+.terminal-btn {
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  padding: 10px 20px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+}
+
+.terminal-btn::before {
+  content: '> ';
+  color: var(--green-dim);
+}
+
+.terminal-btn:hover {
+  background: var(--green-glow);
+  box-shadow: 0 0 12px var(--green-glow-strong);
+  text-shadow: 0 0 8px var(--green);
+}
+
+.terminal-btn:active {
+  transform: scale(0.98);
+}
+
+.terminal-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.terminal-btn-full {
+  width: 100%;
+  text-align: left;
+}
+
+.terminal-btn-danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.terminal-btn-danger::before {
+  content: 'rm ';
+  color: rgba(255, 0, 64, 0.5);
+}
+
+.terminal-btn-danger:hover {
+  background: rgba(255, 0, 64, 0.1);
+  box-shadow: 0 0 12px rgba(255, 0, 64, 0.3);
+}
+
+/* ── Status messages ──────────────────────────────────────────────────────── */
+
+.terminal-error {
+  border-left: 2px solid var(--red);
+  padding: 8px 12px;
+  color: var(--red);
+  font-size: 12px;
+  background: rgba(255, 0, 64, 0.05);
+}
+
+.terminal-error::before {
+  content: '[ERROR] ';
+  opacity: 0.7;
+}
+
+.terminal-success {
+  border-left: 2px solid var(--green);
+  padding: 8px 12px;
+  color: var(--green);
+  font-size: 12px;
+  background: var(--green-glow);
+}
+
+.terminal-success::before {
+  content: '[OK] ';
+  opacity: 0.7;
+}
+
+.terminal-loading {
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.terminal-loading::before {
+  content: '[...] ';
+  opacity: 0.7;
+}
+
+/* ── File list (document list) ────────────────────────────────────────────── */
+
+.terminal-file-entry {
+  border-bottom: 1px solid rgba(0, 255, 65, 0.08);
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.1s;
+  animation: fadeIn 0.3s ease both;
+}
+
+.terminal-file-entry:hover {
+  background: var(--green-glow);
+}
+
+.terminal-file-entry:hover .file-name {
+  text-shadow: 0 0 8px var(--green);
+}
+
+.file-name {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.file-name::before {
+  content: '~/docs/';
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.file-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* ── Nav/header ───────────────────────────────────────────────────────────── */
+
+.terminal-nav {
+  border-bottom: 1px solid var(--green-dim);
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--dark-2);
+  box-shadow: 0 1px 0 var(--green-glow);
+}
+
+.terminal-nav-user {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.terminal-nav-user::before {
+  content: 'USER@COLLABDOC:~$ ';
+  color: var(--green);
+}
+
+/* ── Prompt line ──────────────────────────────────────────────────────────── */
+
+.prompt-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.prompt-line::before {
+  content: '$';
+  color: var(--green-dim);
+  flex-shrink: 0;
+}
+
+/* ── Section headings ─────────────────────────────────────────────────────── */
+
+.terminal-section-title {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(0, 255, 65, 0.08);
+  background: var(--dark-2);
+}
+
+.terminal-section-title::before {
+  content: '# ';
+  color: var(--green-dim);
+}
+
+/* ── Link ─────────────────────────────────────────────────────────────────── */
+
+.terminal-link {
+  color: var(--green-dim);
+  text-decoration: none;
+  font-size: 12px;
+  border-bottom: 1px solid var(--text-muted);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.terminal-link:hover {
+  color: var(--green);
+  border-bottom-color: var(--green);
+  text-shadow: 0 0 6px var(--green-glow-strong);
+}
+
+/* ── Connection status dot ────────────────────────────────────────────────── */
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.connected {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 2s ease-in-out infinite;
+}
+
+.status-dot.reconnecting {
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+  animation: blink 0.5s ease-in-out infinite;
+}
+
+.status-dot.disconnected {
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red);
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+
+.terminal-empty {
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.terminal-empty::before {
+  display: block;
+  content: '// no files found';
+  margin-bottom: 8px;
+  color: var(--text-dim);
+}
