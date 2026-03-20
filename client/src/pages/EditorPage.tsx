@@ -5,6 +5,9 @@ import type { OnMount } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { getDocument } from '../services/docService.js';
 import type { DocDetail } from '../services/docService.js';
+import { convertMonacoChange, generateEventId } from '../hooks/useEditorEvents.js';
+import type { EgEvent, EventId } from '../types/crdt.js';
+
 
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +18,8 @@ export default function EditorPage() {
   const [error, setError] = useState('');
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const frontierRef = useRef<EventId[]>([]);
+  const clientId = useRef<string>(`client-${generateEventId('init')}`);
 
   useEffect(() => {
     if (!id) return;
@@ -44,6 +49,35 @@ export default function EditorPage() {
     }
     editorInstance.focus();
   };
+  function handleChange(
+    value: string | undefined,
+    ev: editor.IModelContentChangedEvent
+  ) {
+    // Don't process changes if viewer
+    if (doc?.role === 'VIEWER') return;
+
+    const content = value ?? '';
+
+    for (const change of ev.changes) {
+      const events = convertMonacoChange(
+        change,
+        // Use content BEFORE this change for offset calculation
+        // Monaco fires onChange after the change — we need the old content
+        // We'll fix this properly in Step 22 — for now log the events
+        content,
+        frontierRef.current,
+        clientId.current
+      );
+
+      // Log for now — Step 22 will send these via WebSocket
+      console.log('Generated events:', events);
+
+      // Update frontier to last event's id
+      if (events.length > 0) {
+        frontierRef.current = [events[events.length - 1].id];
+      }
+    }
+  }
 
   useEffect(() => {
     if (doc && editorRef.current) {
@@ -128,6 +162,7 @@ export default function EditorPage() {
           defaultLanguage="plaintext"
           theme="vs"
           onMount={handleMount}
+          onChange={handleChange}
           options={{
             fontSize: 15,
             fontFamily: "'Special Elite', 'Courier New', monospace",
