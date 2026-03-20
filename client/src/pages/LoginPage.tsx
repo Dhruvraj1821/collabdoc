@@ -21,98 +21,108 @@ export default function LoginPage() {
       refreshAuth();
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.error ?? 'Authentication failed');
+      setError(err.response?.data?.error ?? 'Login failed');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="terminal-screen" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div style={{ width: '100%', maxWidth: '420px', animation: 'fadeIn 0.4s ease' }}>
+    <div className="page-wrap" style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+    }}>
 
-        {/* Logo */}
-        <div style={{ marginBottom: '32px', textAlign: 'center' }}>
-          <div className="terminal-logo">COLLABDOC</div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '11px', letterSpacing: '0.2em', marginTop: '6px' }}>
-            COLLABORATIVE TEXT EDITOR v1.0.0
-          </div>
+      {/* Wordmark */}
+      <div style={{ marginBottom: '36px', textAlign: 'center' }}>
+        <div className="analog-wordmark font-display" style={{ fontSize: '32px' }}>
+          Collab<span>Doc</span>
         </div>
+        <div className="font-typewriter" style={{
+          fontSize: '11px',
+          color: 'var(--ink-faded)',
+          letterSpacing: '0.18em',
+          marginTop: '6px',
+          textTransform: 'uppercase',
+        }}>
+          Collaborative Text Editor
+        </div>
+      </div>
 
-        {/* Window */}
-        <div className="terminal-window">
-          <div className="terminal-header">
-            <div className="terminal-dot" />
-            <div className="terminal-dot" />
-            <div className="terminal-dot" />
-            <span className="terminal-title">auth — login</span>
+      {/* Auth panel */}
+      <div className="auth-panel anim-ink-drop">
+        <div className="auth-panel-title">Sign In</div>
+        <div className="auth-panel-subtitle">Enter your credentials to continue</div>
+
+        {error && (
+          <div className="notice-error" style={{ marginBottom: '24px' }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="analog-field">
+            <label className="analog-label">Email Address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="analog-input"
+              placeholder="your@email.com"
+              required
+            />
           </div>
 
-          <div style={{ padding: '24px' }}>
-
-            <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '20px', lineHeight: '1.6' }}>
-              <span style={{ color: 'var(--green-dim)' }}>system</span>
-              {' › '}Authenticate to access your workspace.
-            </div>
-
-            {error && (
-              <div className="terminal-error" style={{ marginBottom: '16px' }}>
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label className="terminal-label">email_address</label>
-                <div className="prompt-line">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="terminal-input"
-                    placeholder="user@domain.com"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="terminal-label">password</label>
-                <div className="prompt-line">
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="terminal-input"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="terminal-btn terminal-btn-full"
-                style={{ marginTop: '8px' }}
-              >
-                {loading ? 'authenticating...' : 'login'}
-              </button>
-            </form>
-
-            <div style={{ marginTop: '20px', borderTop: '1px solid rgba(0,255,65,0.08)', paddingTop: '16px', fontSize: '12px', color: 'var(--text-dim)' }}>
-              no account?{' '}
-              <Link to="/register" className="terminal-link">
-                register --new-user
-              </Link>
-            </div>
+          <div className="analog-field">
+            <label className="analog-label">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="analog-input"
+              placeholder="········"
+              required
+            />
           </div>
-        </div>
 
-        {/* Footer */}
-        <div style={{ textAlign: 'center', marginTop: '20px', color: 'var(--text-muted)', fontSize: '10px', letterSpacing: '0.15em' }}>
-          SYSTEM READY <span className="cursor" />
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-press btn-press-accent"
+            style={{ width: '100%', marginTop: '8px' }}
+          >
+            {loading ? 'Signing in...' : 'Sign In'}
+          </button>
+        </form>
+
+        <div style={{
+          marginTop: '28px',
+          paddingTop: '20px',
+          borderTop: '1px dashed var(--paper-line)',
+          fontFamily: "'Special Elite', monospace",
+          fontSize: '12px',
+          color: 'var(--ink-faded)',
+          textAlign: 'center',
+        }}>
+          No account yet?{' '}
+          <Link to="/register" className="analog-link">
+            Create one
+          </Link>
         </div>
+      </div>
+
+      <div className="font-typewriter" style={{
+        marginTop: '28px',
+        fontSize: '10px',
+        color: 'var(--ink-ghost)',
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+      }}>
+        CollabDoc · EuroSys 2025 · Eg-Walker CRDT
       </div>
     </div>
   );

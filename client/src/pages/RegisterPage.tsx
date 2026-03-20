@@ -29,107 +29,116 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="terminal-screen" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div style={{ width: '100%', maxWidth: '420px', animation: 'fadeIn 0.4s ease' }}>
+    <div className="page-wrap" style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+    }}>
 
-        {/* Logo */}
-        <div style={{ marginBottom: '32px', textAlign: 'center' }}>
-          <div className="terminal-logo">COLLABDOC</div>
-          <div style={{ color: 'var(--text-dim)', fontSize: '11px', letterSpacing: '0.2em', marginTop: '6px' }}>
-            COLLABORATIVE TEXT EDITOR v1.0.0
-          </div>
+      {/* Wordmark */}
+      <div style={{ marginBottom: '36px', textAlign: 'center' }}>
+        <div className="analog-wordmark font-display" style={{ fontSize: '32px' }}>
+          Collab<span>Doc</span>
         </div>
+        <div className="font-typewriter" style={{
+          fontSize: '11px',
+          color: 'var(--ink-faded)',
+          letterSpacing: '0.18em',
+          marginTop: '6px',
+          textTransform: 'uppercase',
+        }}>
+          Collaborative Text Editor
+        </div>
+      </div>
 
-        {/* Window */}
-        <div className="terminal-window">
-          <div className="terminal-header">
-            <div className="terminal-dot" />
-            <div className="terminal-dot" />
-            <div className="terminal-dot" />
-            <span className="terminal-title">auth — register</span>
+      {/* Auth panel */}
+      <div className="auth-panel anim-ink-drop">
+        <div className="auth-panel-title">Create Account</div>
+        <div className="auth-panel-subtitle">Start writing together</div>
+
+        {error && (
+          <div className="notice-error" style={{ marginBottom: '24px' }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="analog-field">
+            <label className="analog-label">Email Address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="analog-input"
+              placeholder="your@email.com"
+              required
+            />
           </div>
 
-          <div style={{ padding: '24px' }}>
-
-            <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '20px', lineHeight: '1.6' }}>
-              <span style={{ color: 'var(--green-dim)' }}>system</span>
-              {' › '}Create a new user account.
-            </div>
-
-            {error && (
-              <div className="terminal-error" style={{ marginBottom: '16px' }}>
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label className="terminal-label">email_address</label>
-                <div className="prompt-line">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="terminal-input"
-                    placeholder="user@domain.com"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="terminal-label">username</label>
-                <div className="prompt-line">
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    className="terminal-input"
-                    placeholder="min 3 chars"
-                    required
-                    minLength={3}
-                    maxLength={20}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="terminal-label">password</label>
-                <div className="prompt-line">
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="terminal-input"
-                    placeholder="min 8 chars"
-                    required
-                    minLength={8}
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="terminal-btn terminal-btn-full"
-                style={{ marginTop: '8px' }}
-              >
-                {loading ? 'creating account...' : 'register --new-user'}
-              </button>
-            </form>
-
-            <div style={{ marginTop: '20px', borderTop: '1px solid rgba(0,255,65,0.08)', paddingTop: '16px', fontSize: '12px', color: 'var(--text-dim)' }}>
-              already registered?{' '}
-              <Link to="/login" className="terminal-link">
-                login
-              </Link>
-            </div>
+          <div className="analog-field">
+            <label className="analog-label">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              className="analog-input"
+              placeholder="min. 3 characters"
+              required
+              minLength={3}
+              maxLength={20}
+            />
           </div>
-        </div>
 
-        <div style={{ textAlign: 'center', marginTop: '20px', color: 'var(--text-muted)', fontSize: '10px', letterSpacing: '0.15em' }}>
-          SYSTEM READY <span className="cursor" />
+          <div className="analog-field">
+            <label className="analog-label">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="analog-input"
+              placeholder="min. 8 characters"
+              required
+              minLength={8}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-press btn-press-accent"
+            style={{ width: '100%', marginTop: '8px' }}
+          >
+            {loading ? 'Creating account...' : 'Create Account'}
+          </button>
+        </form>
+
+        <div style={{
+          marginTop: '28px',
+          paddingTop: '20px',
+          borderTop: '1px dashed var(--paper-line)',
+          fontFamily: "'Special Elite', monospace",
+          fontSize: '12px',
+          color: 'var(--ink-faded)',
+          textAlign: 'center',
+        }}>
+          Already have an account?{' '}
+          <Link to="/login" className="analog-link">
+            Sign in
+          </Link>
         </div>
+      </div>
+
+      <div className="font-typewriter" style={{
+        marginTop: '28px',
+        fontSize: '10px',
+        color: 'var(--ink-ghost)',
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+      }}>
+        CollabDoc · EuroSys 2025 · Eg-Walker CRDT
       </div>
     </div>
   );
