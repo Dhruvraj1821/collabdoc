@@ -4,11 +4,14 @@ import { PresenceUpdateMessage } from './messageTypes.js';
 
 interface Room {
   docId: string;
+  // connectionId → ws — allows same user in multiple tabs
   connections: Map<string, AuthenticatedWebSocket>;
   walker: EgWalker;
 }
 
 const rooms = new Map<string, Room>();
+
+// ── Join ──────────────────────────────────────────────────────────────────────
 
 export function joinRoom(
   docId: string,
@@ -24,9 +27,14 @@ export function joinRoom(
   }
 
   const room = rooms.get(docId)!;
-  room.connections.set(ws.userId, ws);
+
+  // Key by connectionId not userId — same user can have multiple tabs open
+  room.connections.set(ws.connectionId, ws);
+
   broadcastPresence(docId);
 }
+
+// ── Leave ─────────────────────────────────────────────────────────────────────
 
 export function leaveRoom(
   docId: string,
@@ -35,7 +43,7 @@ export function leaveRoom(
   const room = rooms.get(docId);
   if (!room) return;
 
-  room.connections.delete(ws.userId);
+  room.connections.delete(ws.connectionId);
 
   if (room.connections.size === 0) {
     rooms.delete(docId);
@@ -48,52 +56,69 @@ export function leaveRoom(
   broadcastPresence(docId);
 }
 
+// ── Get walker ────────────────────────────────────────────────────────────────
+
 export function getRoomWalker(docId: string): EgWalker | null {
   return rooms.get(docId)?.walker ?? null;
 }
+
+// ── Check if room exists ──────────────────────────────────────────────────────
 
 export function roomExists(docId: string): boolean {
   return rooms.has(docId);
 }
 
+// ── Broadcast to room ─────────────────────────────────────────────────────────
+
 export function broadcastToRoom(
   docId: string,
   message: object,
-  excludeUserId?: string
+  excludeConnectionId?: string
 ): void {
   const room = rooms.get(docId);
   if (!room) return;
 
-  for (const [userId, ws] of room.connections) {
-    if (userId === excludeUserId) continue;
+  for (const [connectionId, ws] of room.connections) {
+    if (connectionId === excludeConnectionId) continue;
     safeSend(ws, message);
   }
 }
+
+// ── Broadcast presence ────────────────────────────────────────────────────────
 
 function broadcastPresence(docId: string): void {
   const room = rooms.get(docId);
   if (!room) return;
 
-  const users = Array.from(room.connections.values()).map(ws => ({
-    userId: ws.userId,
-    username: ws.username,
-    color: ws.color,
-  }));
+  // Deduplicate users — same user in multiple tabs shows once
+  const userMap = new Map<string, { userId: string; username: string; color: string }>();
+  for (const ws of room.connections.values()) {
+    userMap.set(ws.userId, {
+      userId: ws.userId,
+      username: ws.username,
+      color: ws.color,
+    });
+  }
 
   const message: PresenceUpdateMessage = {
     type: 'presence_update',
     docId,
-    users,
+    users: Array.from(userMap.values()),
   };
 
   broadcastToRoom(docId, message);
 }
 
+// ── Get all docIds a user is in ───────────────────────────────────────────────
+
 export function getUserRooms(userId: string): string[] {
   const docIds: string[] = [];
   for (const [docId, room] of rooms) {
-    if (room.connections.has(userId)) {
-      docIds.push(docId);
+    for (const ws of room.connections.values()) {
+      if (ws.userId === userId) {
+        docIds.push(docId);
+        break;
+      }
     }
   }
   return docIds;

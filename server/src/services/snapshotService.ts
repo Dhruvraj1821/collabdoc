@@ -47,31 +47,24 @@ export async function replayDocument(docId: string): Promise<{
   walker: EgWalker;
 }> {
   const walker = new EgWalker();
-
-  // Step 1 — check for a snapshot
   const snapshot = await getLatestSnapshot(docId);
-
   let afterSequenceNum = 0;
 
   if (snapshot) {
-    // Step 2 — restore the walker to the snapshot state
-    // setInitialContent replays the snapshot content as synthetic events
     walker.setInitialContent(snapshot.content);
     afterSequenceNum = snapshot.sequenceNum;
   }
 
-  // Step 3 — load only events after the snapshot (or all events if no snapshot)
   const events = await loadEvents(docId, afterSequenceNum);
 
-  // Step 4 — replay events through the walker
   for (const event of events) {
+    // Guard — skip malformed events from old test data
+    if (!event.op || !event.op.type) {
+      console.warn(`Skipping malformed event ${event.id}`);
+      continue;
+    }
     walker.applyEvent(event);
   }
 
-  // Step 5 — return both the content string and the live walker
-  // The WebSocket handler needs the walker to apply future events
-  return {
-    content: walker.getContent(),
-    walker,
-  };
+  return { content: walker.getContent(), walker };
 }

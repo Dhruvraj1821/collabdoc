@@ -12,6 +12,7 @@ export interface AuthenticatedWebSocket extends WebSocket {
   isAlive: boolean;
   opCount: number;
   opCountResetTimer?: ReturnType<typeof setTimeout>;
+  connectionId: string; // unique per tab/connection
 }
 
 function assignColor(userId: string): string {
@@ -33,6 +34,8 @@ export function createWebSocketServer(httpServer: Server): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+
+    // ── Authenticate ────────────────────────────────────────────────────────
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
     const token = url.searchParams.get('token');
 
@@ -60,9 +63,12 @@ export function createWebSocketServer(httpServer: Server): WebSocketServer {
     authWs.color = assignColor(decoded.userId);
     authWs.isAlive = true;
     authWs.opCount = 0;
+    // Unique ID per connection — allows same user in multiple tabs
+    authWs.connectionId = `${decoded.userId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    console.log(`WebSocket connected: ${decoded.username}`);
+    console.log(`WebSocket connected: ${decoded.username} (${authWs.connectionId})`);
 
+    // ── Messages ────────────────────────────────────────────────────────────
     ws.on('message', (data) => {
       let parsed: ReturnType<typeof ClientMessageSchema.safeParse>;
 
@@ -70,23 +76,16 @@ export function createWebSocketServer(httpServer: Server): WebSocketServer {
         const json = JSON.parse(data.toString());
         parsed = ClientMessageSchema.safeParse(json);
       } catch {
-        safeSend(ws, {
-          type: 'error',
-          message: 'Invalid JSON',
-          fatal: false,
-        });
+        safeSend(ws, { type: 'error', message: 'Invalid JSON', fatal: false });
         return;
       }
 
       if (!parsed.success) {
-        safeSend(ws, {
-          type: 'error',
-          message: 'Invalid message format',
-          fatal: false,
-        });
+        safeSend(ws, { type: 'error', message: 'Invalid message format', fatal: false });
         return;
       }
 
+      // Per-connection rate limiting
       authWs.opCount++;
       if (!authWs.opCountResetTimer) {
         authWs.opCountResetTimer = setTimeout(() => {
@@ -96,11 +95,7 @@ export function createWebSocketServer(httpServer: Server): WebSocketServer {
       }
 
       if (authWs.opCount > 50) {
-        safeSend(ws, {
-          type: 'error',
-          message: 'Rate limit exceeded — slow down',
-          fatal: true,
-        });
+        safeSend(ws, { type: 'error', message: 'Rate limit exceeded', fatal: true });
         ws.close();
         return;
       }
@@ -110,18 +105,21 @@ export function createWebSocketServer(httpServer: Server): WebSocketServer {
       });
     });
 
+    // ── Disconnect ──────────────────────────────────────────────────────────
     ws.on('close', () => {
-      console.log(`WebSocket disconnected: ${authWs.username}`);
+      console.log(`WebSocket disconnected: ${authWs.username} (${authWs.connectionId})`);
       import('./wsHandler.js').then(({ handleDisconnect }) => {
         handleDisconnect(authWs);
       });
     });
 
+    // ── Heartbeat ───────────────────────────────────────────────────────────
     ws.on('pong', () => {
       authWs.isAlive = true;
     });
   });
 
+  // Ping all clients every 30 seconds
   const heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
       const authWs = ws as AuthenticatedWebSocket;

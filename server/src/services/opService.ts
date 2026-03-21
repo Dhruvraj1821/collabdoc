@@ -5,17 +5,26 @@ export async function saveEvent(
   event: EgEvent,
   docId: string
 ): Promise<void> {
-  const nextSeq = await getNextSequenceNum(docId);
+  // Use a transaction to prevent race condition on sequenceNum
+  await prisma.$transaction(async (tx) => {
+    const latest = await tx.event.findFirst({
+      where: { documentId: docId },
+      orderBy: { sequenceNum: 'desc' },
+      select: { sequenceNum: true },
+    });
 
-  await prisma.event.create({
-    data: {
-      id: event.id,
-      clientId: event.clientId,
-      parentsJson: JSON.stringify(event.parents),  //EventId[] to json string
-      op: event.op as object,  // prisma stores json fields as objects
-      sequenceNum: nextSeq,
-      documentId: docId,
-    },
+    const nextSeq = (latest?.sequenceNum ?? 0) + 1;
+
+    await tx.event.create({
+      data: {
+        id: event.id,
+        clientId: event.clientId,
+        parentsJson: JSON.stringify(event.parents),
+        op: event.op as object,
+        sequenceNum: nextSeq,
+        documentId: docId,
+      },
+    });
   });
 }
 

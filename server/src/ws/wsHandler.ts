@@ -64,18 +64,20 @@ async function handleJoinDoc(
     let frontier: string[];
 
     if (roomExists(docId)) {
-      // Room exists — use the in-memory walker
+      // Room already exists — MUST use the in-memory walker
+      // Do NOT call replayDocument here — it creates a separate walker
+      // that doesn't share state with the existing room
       const walker = getRoomWalker(docId)!;
       content = walker.getContent();
       frontier = walker.getFrontier();
       // Add this connection to the existing room
       joinRoom(docId, ws, walker);
     } else {
-      // Fresh room — replay from database
+      // Fresh room — load from database
       const result = await replayDocument(docId);
       content = result.content;
       frontier = result.walker.getFrontier();
-      // Create the room with the freshly loaded walker
+      // Create the room with this walker
       joinRoom(docId, ws, result.walker);
     }
 
@@ -151,7 +153,7 @@ async function handleOperation(
         transformedOp,
         clientId: event.clientId,
       };
-      broadcastToRoom(docId, broadcast, ws.userId);
+      broadcastToRoom(docId, broadcast, ws.connectionId);
     }
   } catch (err) {
     console.error('handleOperation error:', err);
@@ -177,7 +179,7 @@ function handleCursor(
     color: ws.color,
   };
 
-  broadcastToRoom(docId, broadcast, ws.userId);
+  broadcastToRoom(docId, broadcast, ws.connectionId);
 }
 
 async function getUserRole(
