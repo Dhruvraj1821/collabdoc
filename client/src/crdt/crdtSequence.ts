@@ -1,9 +1,12 @@
 import {
-  CRDTRecord,
-  EventId,
   EffectState,
   PS_NOT_INSERTED,
   PS_INS,
+} from './types.js';
+
+import type {
+  CRDTRecord,
+  EventId,
 } from './types.js';
 
 export class CRDTSequence {
@@ -41,10 +44,7 @@ export class CRDTSequence {
 
   retreat(eventId: EventId, opType: 'insert' | 'delete'): void {
     const idx = this.records.findIndex(r => r.eventId === eventId);
-    if (idx === -1){
-      console.warn(`retreat: eventId ${eventId} not found - skipping`);
-      return;
-    }
+    if (idx === -1) throw new Error(`retreat: eventId ${eventId} not found`);
 
     const record = this.records[idx];
 
@@ -57,10 +57,7 @@ export class CRDTSequence {
 
   advance(eventId: EventId, opType: 'insert' | 'delete'): void {
     const idx = this.records.findIndex(r => r.eventId === eventId);
-    if (idx === -1){
-      console.warn(`advance: eventId ${eventId} not found - skipping`);
-      return;
-    }
+    if (idx === -1) throw new Error(`advance: eventId ${eventId} not found`);
 
     const record = this.records[idx];
 

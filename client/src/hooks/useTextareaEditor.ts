@@ -1,4 +1,4 @@
-import type { EgEvent, EventId } from '../types/crdt.js';
+import type { EgEvent, EventId } from '../crdt/types.js';
 
 // ── Generate a unique event ID ────────────────────────────────────────────────
 

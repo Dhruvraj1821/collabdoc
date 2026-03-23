@@ -14,8 +14,10 @@ import {
   broadcastToRoom,
 } from './roomManager.js';
 import { replayDocument } from '../services/snapshotService.js';
-import { saveEvent } from '../services/opService.js';
+import { saveEvent, loadEvents } from '../services/opService.js';
 import prisma from '../db/prisma.js';
+
+// ── Main dispatcher ───────────────────────────────────────────────────────────
 
 export async function handleMessage(
   ws: AuthenticatedWebSocket,
@@ -34,16 +36,19 @@ export async function handleMessage(
   }
 }
 
+// ── Disconnect ────────────────────────────────────────────────────────────────
+
 export async function handleDisconnect(
   ws: AuthenticatedWebSocket
 ): Promise<void> {
   const { getUserRooms } = await import('./roomManager.js');
   const docIds = getUserRooms(ws.userId);
-
   for (const docId of docIds) {
     leaveRoom(docId, ws);
   }
 }
+
+// ── join_doc ──────────────────────────────────────────────────────────────────
 
 async function handleJoinDoc(
   ws: AuthenticatedWebSocket,
@@ -64,29 +69,27 @@ async function handleJoinDoc(
     let frontier: string[];
 
     if (roomExists(docId)) {
-      // Room already exists — MUST use the in-memory walker
-      // Do NOT call replayDocument here — it creates a separate walker
-      // that doesn't share state with the existing room
       const walker = getRoomWalker(docId)!;
       content = walker.getContent();
       frontier = walker.getFrontier();
-      // Add this connection to the existing room
       joinRoom(docId, ws, walker);
     } else {
-      // Fresh room — load from database
       const result = await replayDocument(docId);
       content = result.content;
       frontier = result.walker.getFrontier();
-      // Create the room with this walker
       joinRoom(docId, ws, result.walker);
     }
 
-    const docStateMessage: DocStateMessage = {
-      type: 'doc_state',
+    // Load all events to send to client so it can replay into its own walker
+    const events = await loadEvents(docId, 0);
+
+    const docStateMessage = {
+      type: 'doc_state' as const,
       docId,
       content,
       frontier,
       role,
+      events, // client uses these to build its local EgWalker
     };
 
     safeSend(ws, docStateMessage);
@@ -100,6 +103,8 @@ async function handleJoinDoc(
   }
 }
 
+// ── operation ─────────────────────────────────────────────────────────────────
+
 async function handleOperation(
   ws: AuthenticatedWebSocket,
   message: Extract<ClientMessage, { type: 'operation' }>
@@ -109,11 +114,7 @@ async function handleOperation(
 
     const role = await getUserRole(ws.userId, docId);
     if (!role || role === 'VIEWER') {
-      safeSend(ws, {
-        type: 'error',
-        message: 'You do not have permission to edit this document',
-        fatal: false,
-      });
+      safeSend(ws, { type: 'error', message: 'Permission denied', fatal: false });
       return;
     }
 
@@ -123,47 +124,57 @@ async function handleOperation(
     });
 
     if (existing) {
-      const ack: AckMessage = { type: 'ack', eventId: event.id };
-      safeSend(ws, ack);
+      safeSend(ws, { type: 'ack', eventId: event.id });
       return;
     }
 
     const walker = getRoomWalker(docId);
     if (!walker) {
-      safeSend(ws, {
-        type: 'error',
-        message: 'Document room not found — please rejoin',
-        fatal: false,
-      });
+      safeSend(ws, { type: 'error', message: 'Document room not found — please rejoin', fatal: false });
       return;
+    }
+
+    // Check if all parents are in the walker graph
+    // If not, reload all events from DB into the walker
+    const missingParent = event.parents.find(
+      parentId => !walker['graph']['events'].has(parentId)
+    );
+
+    if (missingParent) {
+      console.log(`Reloading walker for doc ${docId} — missing parent ${missingParent}`);
+      const { loadEvents } = await import('../services/opService.js');
+      const allEvents = await loadEvents(docId, 0);
+      for (const e of allEvents) {
+        if (!e.op || !e.op.type) continue;
+        if (!walker['graph']['events'].has(e.id)) {
+          walker.applyEvent(e);
+        }
+      }
     }
 
     const { transformedOp } = walker.applyEvent(event);
 
     await saveEvent(event, docId);
 
-    const ack: AckMessage = { type: 'ack', eventId: event.id };
-    safeSend(ws, ack);
+    safeSend(ws, { type: 'ack', eventId: event.id });
 
     if (transformedOp) {
-      const broadcast: OpBroadcastMessage = {
+      broadcastToRoom(docId, {
         type: 'op_broadcast',
         docId,
         eventId: event.id,
         transformedOp,
         clientId: event.clientId,
-      };
-      broadcastToRoom(docId, broadcast, ws.connectionId);
+        event,
+      }, ws.connectionId);
     }
   } catch (err) {
     console.error('handleOperation error:', err);
-    safeSend(ws, {
-      type: 'error',
-      message: 'Failed to process operation',
-      fatal: false,
-    });
+    safeSend(ws, { type: 'error', message: 'Failed to process operation', fatal: false });
   }
 }
+
+// ── cursor ────────────────────────────────────────────────────────────────────
 
 function handleCursor(
   ws: AuthenticatedWebSocket,
@@ -178,9 +189,10 @@ function handleCursor(
     position,
     color: ws.color,
   };
-
   broadcastToRoom(docId, broadcast, ws.connectionId);
 }
+
+// ── RBAC helper ───────────────────────────────────────────────────────────────
 
 async function getUserRole(
   userId: string,

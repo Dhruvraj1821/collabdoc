@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TransformedOp } from '../crdt/types.js';
+import { EgEvent, TransformedOp } from '../crdt/types.js';
 
 export const JoinDocSchema = z.object({
   type: z.literal('join_doc'),
@@ -50,6 +50,7 @@ export interface OpBroadcastMessage {
   eventId: string;
   transformedOp: TransformedOp;
   clientId: string;
+  event: EgEvent
 }
 
 export interface PresenceUpdateMessage {

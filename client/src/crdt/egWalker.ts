@@ -1,12 +1,15 @@
 import { EventGraph } from './eventGraph.js';
 import { CRDTSequence } from './crdtSequence.js';
 import {
-  EgEvent,
-  EventId,
-  TransformedOp,
   EffectState,
   PS_INS,
   PS_NOT_INSERTED,
+} from './types.js';
+
+import type {
+  EgEvent,
+  EventId,
+  TransformedOp,
 } from './types.js';
 
 export class EgWalker {
@@ -37,9 +40,9 @@ export class EgWalker {
 
     for (const eventId of retreatOrdered) {
         const e = this.graph.getEvent(eventId);
-        if(!e){
+        if(!e) {
           console.warn(`retreat: event ${eventId} not found in graph - skipping`);
-          continue
+          continue;
         }
         const targetId = e.op.type === 'delete'
             ? this.deleteTargets.get(eventId)!
@@ -50,13 +53,11 @@ export class EgWalker {
     const advanceOrdered = this.graph.topologicalSort(new Set(toAdvance));
 
     for (const eventId of advanceOrdered) {
-        const e = this.graph.getEvent(eventId)!;
-
+        const e = this.graph.getEvent(eventId);
         if(!e){
           console.warn(`advance: event ${eventId} not found in graph - skipping`);
-          continue
+          continue;
         }
-
         const targetId = e.op.type === 'delete'
             ? this.deleteTargets.get(eventId)!
             : eventId;

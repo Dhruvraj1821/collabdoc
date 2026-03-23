@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getDocument } from '../services/docService.js';
 import type { DocDetail } from '../services/docService.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
-import { diffContent, applyTransformedOp, generateEventId } from '../hooks/useTextareaEditor.js';
-import type { EventId, TransformedOp } from '../types/crdt.js';
+import { diffContent, generateEventId } from '../hooks/useTextareaEditor.js';
+import { EgWalker } from '../crdt/egWalker.js';
+import type { EgEvent, EventId, TransformedOp } from '../crdt/types.js';
 import type { PresenceUser } from '../hooks/useWebSocket.js';
 
 export default function EditorPage() {
@@ -14,67 +15,84 @@ export default function EditorPage() {
   const [doc, setDoc] = useState<DocDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  // The single source of truth for editor content
   const [content, setContent] = useState('');
   const [presence, setPresence] = useState<PresenceUser[]>([]);
 
-  // Refs that must not trigger re-renders
   const frontierRef = useRef<EventId[]>([]);
   const clientId = useRef<string>(`client-${generateEventId('init')}`);
-  const isApplyingRemote = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const walkerRef = useRef<EgWalker>(new EgWalker());
+  const docStateReceivedRef = useRef(false);
 
   // ── WebSocket callbacks ───────────────────────────────────────────────────
 
-  const onDocState = useCallback((serverContent: string, frontier: EventId[]) => {
+  const onDocState = useCallback((
+    serverContent: string,
+    frontier: EventId[],
+    events: EgEvent[]
+  ) => {
+    // Replay all real events into a fresh client walker
+    const newWalker = new EgWalker();
+    for (const event of events) {
+      if (!event.op || !event.op.type) continue;
+      newWalker.applyEvent(event);
+    }
+    walkerRef.current = newWalker;
     setContent(serverContent);
     frontierRef.current = frontier;
+    docStateReceivedRef.current = true;
   }, []);
 
-  const onRemoteOp = useCallback((transformedOp: TransformedOp, eventId: string) => {
-    isApplyingRemote.current = true;
+  const onRemoteOp = useCallback((event: EgEvent, _transformedOp: TransformedOp) => {
+    // Run through client walker for correct convergence
+    const { transformedOp } = walkerRef.current.applyEvent(event);
+    if (!transformedOp) return;
 
-    // Save cursor position before applying
     const textarea = textareaRef.current;
     const selStart = textarea?.selectionStart ?? 0;
     const selEnd = textarea?.selectionEnd ?? 0;
 
     setContent(prev => {
-      const newContent = applyTransformedOp(prev, transformedOp);
-
-      // Restore cursor after React re-renders
-      // Adjust cursor if the op was before the cursor position
-      requestAnimationFrame(() => {
-        if (!textareaRef.current) return;
-        let newStart = selStart;
-        let newEnd = selEnd;
-
-        if (transformedOp.type === 'insert' && transformedOp.index <= selStart) {
-          newStart += 1;
-          newEnd += 1;
-        } else if (transformedOp.type === 'delete' && transformedOp.index < selStart) {
-          newStart -= 1;
-          newEnd -= 1;
-        }
-
-        textareaRef.current.selectionStart = newStart;
-        textareaRef.current.selectionEnd = newEnd;
-        isApplyingRemote.current = false;
-      });
-
-      return newContent;
+      if (transformedOp.type === 'insert' && transformedOp.char) {
+        return (
+          prev.slice(0, transformedOp.index) +
+          transformedOp.char +
+          prev.slice(transformedOp.index)
+        );
+      } else if (transformedOp.type === 'delete') {
+        return (
+          prev.slice(0, transformedOp.index) +
+          prev.slice(transformedOp.index + 1)
+        );
+      }
+      return prev;
     });
 
-    // Update frontier with the remote event
-    frontierRef.current = [eventId];
+    frontierRef.current = [event.id];
+
+    requestAnimationFrame(() => {
+      if (!textareaRef.current) return;
+      let newStart = selStart;
+      let newEnd = selEnd;
+
+      if (transformedOp.type === 'insert' && transformedOp.index <= selStart) {
+        newStart += 1;
+        newEnd += 1;
+      } else if (transformedOp.type === 'delete' && transformedOp.index < selStart) {
+        newStart -= 1;
+        newEnd -= 1;
+      }
+
+      textareaRef.current.selectionStart = Math.max(0, newStart);
+      textareaRef.current.selectionEnd = Math.max(0, newEnd);
+    });
   }, []);
 
   const onPresence = useCallback((users: PresenceUser[]) => {
     setPresence(users);
   }, []);
 
-  // ── WebSocket hook ────────────────────────────────────────────────────────
+  // ── WebSocket ─────────────────────────────────────────────────────────────
 
   const { connectionState, sendOperation, sendCursor } = useWebSocket(
     id,
@@ -109,14 +127,12 @@ export default function EditorPage() {
   // ── Handle textarea change ────────────────────────────────────────────────
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    // Skip if this change was triggered by a remote op
-    if (isApplyingRemote.current) return;
     if (doc?.role === 'VIEWER') return;
+    if(!docStateReceivedRef.current) return;
 
     const newContent = e.target.value;
     const oldContent = content;
 
-    // Diff old vs new to get events
     const events = diffContent(
       oldContent,
       newContent,
@@ -124,28 +140,24 @@ export default function EditorPage() {
       clientId.current
     );
 
-    // Update local content immediately
     setContent(newContent);
 
-    // Send each event
     for (const event of events) {
+      walkerRef.current.applyEvent(event);
       sendOperation(event);
     }
 
-    // Update frontier to last event
     if (events.length > 0) {
       frontierRef.current = [events[events.length - 1].id];
     }
   }
-
-  // ── Handle cursor move ────────────────────────────────────────────────────
 
   function handleSelect(e: React.SyntheticEvent<HTMLTextAreaElement>) {
     const target = e.target as HTMLTextAreaElement;
     sendCursor(target.selectionStart);
   }
 
-  // ── Connection status ─────────────────────────────────────────────────────
+  // ── Status ────────────────────────────────────────────────────────────────
 
   function getStatusLabel() {
     switch (connectionState) {
@@ -210,7 +222,6 @@ export default function EditorPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {/* Presence avatars */}
           {presence.length > 0 && (
             <div style={{ display: 'flex', gap: '4px' }}>
               {presence.map(user => (
@@ -233,7 +244,6 @@ export default function EditorPage() {
             </div>
           )}
 
-          {/* Connection status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span className={`status-dot ${getStatusClass()}`} />
             <span className="font-typewriter" style={{

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { EgEvent, EventId, TransformedOp } from '../types/crdt.js';
+import type { EgEvent, EventId, TransformedOp } from '../crdt/types.js';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
@@ -9,6 +9,7 @@ interface DocStateMessage {
   content: string;
   frontier: EventId[];
   role: string;
+  events: EgEvent[];
 }
 
 interface OpBroadcastMessage {
@@ -17,6 +18,7 @@ interface OpBroadcastMessage {
   eventId: string;
   transformedOp: TransformedOp;
   clientId: string;
+  event: EgEvent;
 }
 
 interface PresenceUser {
@@ -41,8 +43,8 @@ export type { PresenceUser };
 
 export function useWebSocket(
   docId: string | undefined,
-  onDocState: (content: string, frontier: EventId[]) => void,
-  onRemoteOp: (transformedOp: TransformedOp, eventId: string) => void,
+  onDocState: (content: string, frontier: EventId[], events: EgEvent[]) => void,
+  onRemoteOp: (event: EgEvent, transformedOp: TransformedOp) => void,
   onPresence: (users: PresenceUser[]) => void
 ) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
@@ -51,6 +53,7 @@ export function useWebSocket(
   const pendingQueue = useRef<EgEvent[]>([]);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isConnectingRef = useRef(false);
 
   const docIdRef = useRef(docId);
   const onDocStateRef = useRef(onDocState);
@@ -61,8 +64,6 @@ export function useWebSocket(
   useEffect(() => { onDocStateRef.current = onDocState; }, [onDocState]);
   useEffect(() => { onRemoteOpRef.current = onRemoteOp; }, [onRemoteOp]);
   useEffect(() => { onPresenceRef.current = onPresence; }, [onPresence]);
-
-  // ── Send operation ────────────────────────────────────────────────────────
 
   function sendOperation(event: EgEvent) {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -76,8 +77,6 @@ export function useWebSocket(
     }
   }
 
-  // ── Send cursor ───────────────────────────────────────────────────────────
-
   function sendCursor(position: number) {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -87,8 +86,6 @@ export function useWebSocket(
       }));
     }
   }
-
-  // ── Drain pending queue ───────────────────────────────────────────────────
 
   function drainQueue(serverFrontier: EventId[]) {
     if (pendingQueue.current.length === 0) return;
@@ -108,20 +105,18 @@ export function useWebSocket(
     }
   }
 
-  // ── Handle incoming messages ──────────────────────────────────────────────
-
   function handleMessage(message: any) {
     switch (message.type) {
       case 'doc_state': {
         const msg = message as DocStateMessage;
-        onDocStateRef.current(msg.content, msg.frontier);
+        onDocStateRef.current(msg.content, msg.frontier, msg.events ?? []);
         drainQueue(msg.frontier);
         break;
       }
 
       case 'op_broadcast': {
         const msg = message as OpBroadcastMessage;
-        onRemoteOpRef.current(msg.transformedOp, msg.eventId);
+        onRemoteOpRef.current(msg.event, msg.transformedOp);
         break;
       }
 
@@ -143,8 +138,6 @@ export function useWebSocket(
     }
   }
 
-  // ── Reconnect ─────────────────────────────────────────────────────────────
-
   function scheduleReconnect() {
     if (reconnectAttempt.current >= 5) {
       setConnectionState('disconnected');
@@ -159,8 +152,6 @@ export function useWebSocket(
     reconnectTimer.current = setTimeout(connect, delay);
   }
 
-  // ── Connect ───────────────────────────────────────────────────────────────
-
   function connect() {
     const currentDocId = docIdRef.current;
     if (!currentDocId) return;
@@ -168,10 +159,15 @@ export function useWebSocket(
     const token = localStorage.getItem('token');
     if (!token) return;
 
+    // Prevent double connection from React StrictMode double mount
+    if (isConnectingRef.current) return;
     if (
       wsRef.current?.readyState === WebSocket.OPEN ||
-      wsRef.current?.readyState === WebSocket.CONNECTING
+      wsRef.current?.readyState === WebSocket.CONNECTING ||
+      wsRef.current?.readyState === WebSocket.CLOSING
     ) return;
+
+    isConnectingRef.current = true;
 
     const wsUrl = `${import.meta.env.VITE_WS_URL}?token=${token}`;
     const ws = new WebSocket(wsUrl);
@@ -179,6 +175,7 @@ export function useWebSocket(
     setConnectionState('connecting');
 
     ws.onopen = () => {
+      isConnectingRef.current = false;
       reconnectAttempt.current = 0;
       setConnectionState('connected');
       ws.send(JSON.stringify({ type: 'join_doc', docId: currentDocId }));
@@ -193,16 +190,16 @@ export function useWebSocket(
     };
 
     ws.onclose = () => {
+      isConnectingRef.current = false;
       setConnectionState('disconnected');
       scheduleReconnect();
     };
 
     ws.onerror = () => {
+      isConnectingRef.current = false;
       console.error('WebSocket error');
     };
   }
-
-  // ── Mount / unmount ───────────────────────────────────────────────────────
 
   useEffect(() => {
     connect();
@@ -210,6 +207,7 @@ export function useWebSocket(
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       wsRef.current?.close();
       wsRef.current = null;
+      isConnectingRef.current = false;
     };
   }, []);
 
