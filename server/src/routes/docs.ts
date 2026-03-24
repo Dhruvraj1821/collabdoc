@@ -7,6 +7,11 @@ import {
   updateDocument,
   deleteDocument,
 } from '../controllers/docController.js';
+import {
+  listMembers,
+  addMember,
+  removeMember,
+} from '../controllers/inviteController.js';
 
 const router = Router();
 
@@ -18,5 +23,10 @@ router.get('/', listDocuments);
 router.get('/:id', getDocument);
 router.patch('/:id', updateDocument);
 router.delete('/:id', deleteDocument);
+
+// Member management
+router.get('/:id/members', listMembers);
+router.post('/:id/members', addMember);
+router.delete('/:id/members/:userId', removeMember);
 
 export default router;

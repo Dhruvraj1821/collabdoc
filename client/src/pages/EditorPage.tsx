@@ -7,6 +7,7 @@ import { diffContent, generateEventId } from '../hooks/useTextareaEditor.js';
 import { EgWalker } from '../crdt/egWalker.js';
 import type { EgEvent, EventId } from '../crdt/types.js';
 import type { PresenceUser } from '../hooks/useWebSocket.js';
+import InvitePanel from '../components/InvitePanel.js';
 
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,7 @@ export default function EditorPage() {
   const [error, setError] = useState('');
   const [content, setContent] = useState('');
   const [presence, setPresence] = useState<PresenceUser[]>([]);
+  const [showInvite, setShowInvite] = useState(false);
 
   const frontierRef = useRef<EventId[]>([]);
   const clientId = useRef<string>(`client-${generateEventId('init')}`);
@@ -241,6 +243,16 @@ export default function EditorPage() {
             </div>
           )}
 
+          {/* Invite button — owners only */}
+          {doc?.role === 'OWNER' && (
+            <button
+              onClick={() => setShowInvite(true)}
+              className="btn-press btn-press-sm"
+            >
+              + Invite
+            </button>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span className={`status-dot ${getStatusClass()}`} />
             <span className="font-typewriter" style={{
@@ -293,6 +305,14 @@ export default function EditorPage() {
           {presence.length} user{presence.length !== 1 ? 's' : ''} · id: {id?.slice(0, 8)}
         </span>
       </div>
+
+      {/* Invite panel — modal, owner only */}
+      {showInvite && id && (
+        <InvitePanel
+          docId={id}
+          onClose={() => setShowInvite(false)}
+        />
+      )}
     </div>
   );
 }
