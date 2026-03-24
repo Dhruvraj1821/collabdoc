@@ -37,7 +37,6 @@ model Document {
 
   members     DocMember[]
   events      Event[]
-  snapshots   Snapshot[]
   inviteLinks InviteLink[]
 }
 
@@ -74,24 +73,11 @@ model Event {
   documentId String
   document   Document @relation(fields: [documentId], references: [id])
 
-  snapshots Snapshot[] @relation("SnapshotAfterEvent")
 
   @@unique([documentId, sequenceNum])
   @@index([documentId, sequenceNum])
 }
 
-model Snapshot {
-  id        String   @id @default(cuid())
-  content   String
-  createdAt DateTime @default(now())
-
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id])
-
-  // Pointer to which event this snapshot was taken after — replay resumes from here
-  snapshotAfterEventId String
-  snapshotAfterEvent   Event  @relation("SnapshotAfterEvent", fields: [snapshotAfterEventId], references: [id])
-}
 
 model InviteLink {
   id        String    @id @default(cuid())

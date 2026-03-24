@@ -1,7 +1,6 @@
 import { Response } from 'express';
 import { z } from 'zod';
 import prisma from '../db/prisma.js';
-import { replayDocument } from '../services/snapshotService.js';
 import { AuthRequest } from '../middleware/auth.js';
 
 // ── Validation schemas ────────────────────────────────────────────────────────
@@ -103,39 +102,35 @@ export async function listDocuments(
   }
 }
 
-// ── Get a single document with its current content ────────────────────────────
+// ── Get a single document
 
-export async function getDocument(
-  req: AuthRequest,
-  res: Response
-): Promise<void> {
+export async function getDocument(req: AuthRequest, res: Response) {
   try {
+    const id = req.params.id as string;
     const userId = req.user!.userId;
-    const docId = req.params.id as string;
-
-    const role = await getUserRole(userId, docId);
-    if (!role) {
-      res.status(404).json({ error: 'Document not found' });
-      return;
-    }
-
-    const { content } = await replayDocument(docId);
 
     const doc = await prisma.document.findUnique({
-      where: { id: docId },
-      select: { id: true, title: true, updatedAt: true },
+      where: { id },
+      select: { id: true, title: true, ownerId: true, updatedAt: true },
     });
 
-    res.json({
-      id: doc!.id,
-      title: doc!.title,
-      updatedAt: doc!.updatedAt,
-      content,
-      role,
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+    if (doc.ownerId === userId) {
+      return res.json({ id: doc.id, title: doc.title, role: 'OWNER', updatedAt: doc.updatedAt });
+    }
+
+    const membership = await prisma.docMember.findUnique({
+      where: { userId_documentId: { userId, documentId: id } },
+      select: { role: true },
     });
+
+    if (!membership) return res.status(404).json({ error: 'Document not found' });
+
+    return res.json({ id: doc.id, title: doc.title, role: membership.role, updatedAt: doc.updatedAt });
   } catch (err) {
     console.error('getDocument error:', err);
-    res.status(500).json({ error: 'Failed to get document' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -201,7 +196,6 @@ export async function deleteDocument(
 
     // Delete in correct order — children before parents (foreign key constraints)
     await prisma.event.deleteMany({ where: { documentId: docId } });
-    await prisma.snapshot.deleteMany({ where: { documentId: docId } });
     await prisma.docMember.deleteMany({ where: { documentId: docId } });
     await prisma.document.delete({ where: { id: docId } });
 

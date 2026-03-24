@@ -1,50 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import type { EgEvent, EventId, TransformedOp } from '../crdt/types.js';
+import type { EgEvent, EventId } from '../crdt/types.js';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
-interface DocStateMessage {
-  type: 'doc_state';
-  docId: string;
-  content: string;
-  frontier: EventId[];
-  role: string;
-  events: EgEvent[];
-}
-
-interface OpBroadcastMessage {
-  type: 'op_broadcast';
-  docId: string;
-  eventId: string;
-  transformedOp: TransformedOp;
-  clientId: string;
-  event: EgEvent;
-}
-
-interface PresenceUser {
+export interface PresenceUser {
   userId: string;
   username: string;
   color: string;
 }
 
-interface PresenceUpdateMessage {
-  type: 'presence_update';
-  docId: string;
-  users: PresenceUser[];
-}
-
-interface ErrorMessage {
-  type: 'error';
-  message: string;
-  fatal: boolean;
-}
-
-export type { PresenceUser };
-
 export function useWebSocket(
   docId: string | undefined,
-  onDocState: (content: string, frontier: EventId[], events: EgEvent[]) => void,
-  onRemoteOp: (event: EgEvent, transformedOp: TransformedOp) => void,
+  onDocState: (events: EgEvent[]) => void,
+  onRemoteOp: (event: EgEvent) => void,
   onPresence: (users: PresenceUser[]) => void
 ) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
@@ -54,6 +22,7 @@ export function useWebSocket(
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isConnectingRef = useRef(false);
+  const waitingForAck = useRef(false);
 
   const docIdRef = useRef(docId);
   const onDocStateRef = useRef(onDocState);
@@ -65,8 +34,18 @@ export function useWebSocket(
   useEffect(() => { onRemoteOpRef.current = onRemoteOp; }, [onRemoteOp]);
   useEffect(() => { onPresenceRef.current = onPresence; }, [onPresence]);
 
+  // ── Send operation with ack-based queue ───────────────────────────────────
+  // This is Strategy A — we wait for ack before sending next event.
+  // Prevents parent-not-found race conditions on the server.
+
   function sendOperation(event: EgEvent) {
+    if (waitingForAck.current) {
+      pendingQueue.current.push(event);
+      return;
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      waitingForAck.current = true;
       wsRef.current.send(JSON.stringify({
         type: 'operation',
         docId: docIdRef.current,
@@ -74,6 +53,26 @@ export function useWebSocket(
       }));
     } else {
       pendingQueue.current.push(event);
+    }
+  }
+
+  function sendNextFromQueue() {
+    if (pendingQueue.current.length === 0) {
+      waitingForAck.current = false;
+      return;
+    }
+
+    const next = pendingQueue.current.shift()!;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      waitingForAck.current = true;
+      wsRef.current.send(JSON.stringify({
+        type: 'operation',
+        docId: docIdRef.current,
+        event: next,
+      }));
+    } else {
+      pendingQueue.current.unshift(next);
+      waitingForAck.current = false;
     }
   }
 
@@ -87,56 +86,46 @@ export function useWebSocket(
     }
   }
 
-  function drainQueue(serverFrontier: EventId[]) {
-    if (pendingQueue.current.length === 0) return;
-    const queue = [...pendingQueue.current];
-    pendingQueue.current = [];
-
-    if (queue.length > 0) {
-      queue[0] = { ...queue[0], parents: serverFrontier };
-    }
-
-    for (const event of queue) {
-      wsRef.current?.send(JSON.stringify({
-        type: 'operation',
-        docId: docIdRef.current,
-        event,
-      }));
-    }
+  function drainQueue() {
+    waitingForAck.current = false;
+    sendNextFromQueue();
   }
+
+  // ── Handle incoming messages ──────────────────────────────────────────────
 
   function handleMessage(message: any) {
     switch (message.type) {
       case 'doc_state': {
-        const msg = message as DocStateMessage;
-        onDocStateRef.current(msg.content, msg.frontier, msg.events ?? []);
-        drainQueue(msg.frontier);
+        onDocStateRef.current(message.events ?? []);
+        // Drain any pending events that were queued before doc_state arrived
+        drainQueue();
         break;
       }
 
       case 'op_broadcast': {
-        const msg = message as OpBroadcastMessage;
-        onRemoteOpRef.current(msg.event, msg.transformedOp);
+        onRemoteOpRef.current(message.event);
         break;
       }
 
       case 'presence_update': {
-        const msg = message as PresenceUpdateMessage;
-        onPresenceRef.current(msg.users);
+        onPresenceRef.current(message.users);
         break;
       }
 
-      case 'ack':
+      case 'ack': {
+        sendNextFromQueue();
         break;
+      }
 
       case 'error': {
-        const msg = message as ErrorMessage;
-        console.error('WS error from server:', msg.message);
-        if (msg.fatal) wsRef.current?.close();
+        console.error('WS error from server:', message.message);
+        if (message.fatal) wsRef.current?.close();
         break;
       }
     }
   }
+
+  // ── Reconnect ─────────────────────────────────────────────────────────────
 
   function scheduleReconnect() {
     if (reconnectAttempt.current >= 5) {
@@ -152,6 +141,8 @@ export function useWebSocket(
     reconnectTimer.current = setTimeout(connect, delay);
   }
 
+  // ── Connect ───────────────────────────────────────────────────────────────
+
   function connect() {
     const currentDocId = docIdRef.current;
     if (!currentDocId) return;
@@ -159,7 +150,6 @@ export function useWebSocket(
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    // Prevent double connection from React StrictMode double mount
     if (isConnectingRef.current) return;
     if (
       wsRef.current?.readyState === WebSocket.OPEN ||

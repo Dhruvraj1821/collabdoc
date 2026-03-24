@@ -5,8 +5,6 @@ import { saveEvent, loadEvents } from '../services/opService.js';
 import prisma from '../db/prisma.js';
 import type { EgEvent } from '../crdt/types.js';
 
-// ── Simple room registry — docId → set of connections ─────────────────────────
-// No walker. No CRDT. Just who is in which room.
 
 const rooms = new Map<string, Set<AuthenticatedWebSocket>>();
 
@@ -153,7 +151,7 @@ async function handleOperation(
     }
 
     // Save raw event — no CRDT processing
-    await saveEvent(event, docId);
+    await saveEvent(event as EgEvent, docId);
 
     // Ack to sender
     safeSend(ws, { type: 'ack', eventId: event.id });

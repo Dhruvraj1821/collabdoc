@@ -1,62 +1,51 @@
 import { z } from 'zod';
-import { EgEvent, TransformedOp } from '../crdt/types.js';
-
-export const JoinDocSchema = z.object({
-  type: z.literal('join_doc'),
-  docId: z.string().min(1),
-});
-
-export const OperationSchema = z.object({
-  type: z.literal('operation'),
-  docId: z.string().min(1),
-  event: z.object({
-    id: z.string().min(1),
-    clientId: z.string().min(1),
-    parents: z.array(z.string()),
-    op: z.discriminatedUnion('type', [
-      z.object({ type: z.literal('insert'), index: z.number().int().min(0), char: z.string().length(1) }),
-      z.object({ type: z.literal('delete'), index: z.number().int().min(0) }),
-    ]),
-  }),
-});
-
-export const CursorSchema = z.object({
-  type: z.literal('cursor'),
-  docId: z.string().min(1),
-  position: z.number().int().min(0),
-});
+import type { EgEvent } from '../crdt/types.js';
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
-  JoinDocSchema,
-  OperationSchema,
-  CursorSchema,
+  z.object({
+    type: z.literal('join_doc'),
+    docId: z.string(),
+  }),
+  z.object({
+    type: z.literal('operation'),
+    docId: z.string(),
+    event: z.object({
+      id: z.string(),
+      clientId: z.string(),
+      parents: z.array(z.string()),
+      op: z.object({
+        type: z.enum(['insert', 'delete']),
+        index: z.number(),
+        char: z.string().optional(),
+      }),
+    }),
+  }),
+  z.object({
+    type: z.literal('cursor'),
+    docId: z.string(),
+    position: z.number(),
+  }),
 ]);
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
-export type JoinDocMessage = z.infer<typeof JoinDocSchema>;
-export type OperationMessage = z.infer<typeof OperationSchema>;
 
 export interface DocStateMessage {
   type: 'doc_state';
   docId: string;
-  content: string;
-  frontier: string[];
-  role: 'OWNER' | 'EDITOR' | 'VIEWER';
+  role: string;
+  events: EgEvent[];
 }
 
 export interface OpBroadcastMessage {
   type: 'op_broadcast';
   docId: string;
   eventId: string;
-  transformedOp: TransformedOp;
-  clientId: string;
-  event: EgEvent
+  event: EgEvent;
 }
 
-export interface PresenceUpdateMessage {
-  type: 'presence_update';
-  docId: string;
-  users: { userId: string; username: string; color: string }[];
+export interface AckMessage {
+  type: 'ack';
+  eventId: string;
 }
 
 export interface CursorBroadcastMessage {
@@ -68,9 +57,14 @@ export interface CursorBroadcastMessage {
   color: string;
 }
 
-export interface AckMessage {
-  type: 'ack';
-  eventId: string;
+export interface PresenceUpdateMessage {
+  type: 'presence_update';
+  docId: string;
+  users: Array<{
+    userId: string;
+    username: string;
+    color: string;
+  }>;
 }
 
 export interface ErrorMessage {

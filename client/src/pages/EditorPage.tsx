@@ -5,7 +5,7 @@ import type { DocDetail } from '../services/docService.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { diffContent, generateEventId } from '../hooks/useTextareaEditor.js';
 import { EgWalker } from '../crdt/egWalker.js';
-import type { EgEvent, EventId, TransformedOp } from '../crdt/types.js';
+import type { EgEvent, EventId } from '../crdt/types.js';
 import type { PresenceUser } from '../hooks/useWebSocket.js';
 
 export default function EditorPage() {
@@ -26,25 +26,22 @@ export default function EditorPage() {
 
   // ── WebSocket callbacks ───────────────────────────────────────────────────
 
-  const onDocState = useCallback((
-    serverContent: string,
-    frontier: EventId[],
-    events: EgEvent[]
-  ) => {
-    // Replay all real events into a fresh client walker
+  const onDocState = useCallback((events: EgEvent[]) => {
+    // Replay all stored events into a fresh client walker
     const newWalker = new EgWalker();
     for (const event of events) {
       if (!event.op || !event.op.type) continue;
       newWalker.applyEvent(event);
     }
     walkerRef.current = newWalker;
-    setContent(serverContent);
-    frontierRef.current = frontier;
+    const restoredContent = newWalker.getContent();
+    setContent(restoredContent);
+    frontierRef.current = newWalker.getFrontier();
     docStateReceivedRef.current = true;
   }, []);
 
-  const onRemoteOp = useCallback((event: EgEvent, _transformedOp: TransformedOp) => {
-    // Run through client walker for correct convergence
+  const onRemoteOp = useCallback((event: EgEvent) => {
+    // Apply raw event through client walker — gets correct transformedOp
     const { transformedOp } = walkerRef.current.applyEvent(event);
     if (!transformedOp) return;
 
@@ -128,7 +125,7 @@ export default function EditorPage() {
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     if (doc?.role === 'VIEWER') return;
-    if(!docStateReceivedRef.current) return;
+    if (!docStateReceivedRef.current) return;
 
     const newContent = e.target.value;
     const oldContent = content;
