@@ -1,21 +1,52 @@
+import { WebSocket } from 'ws';
 import { AuthenticatedWebSocket, safeSend } from './wsServer.js';
-import {
-  ClientMessage,
-  DocStateMessage,
-  OpBroadcastMessage,
-  AckMessage,
-  CursorBroadcastMessage,
-} from './messageTypes.js';
-import {
-  joinRoom,
-  leaveRoom,
-  getRoomWalker,
-  roomExists,
-  broadcastToRoom,
-} from './roomManager.js';
-import { replayDocument } from '../services/snapshotService.js';
+import { ClientMessage } from './messageTypes.js';
 import { saveEvent, loadEvents } from '../services/opService.js';
 import prisma from '../db/prisma.js';
+import type { EgEvent } from '../crdt/types.js';
+
+// ── Simple room registry — docId → set of connections ─────────────────────────
+// No walker. No CRDT. Just who is in which room.
+
+const rooms = new Map<string, Set<AuthenticatedWebSocket>>();
+
+function joinRoom(docId: string, ws: AuthenticatedWebSocket): void {
+  if (!rooms.has(docId)) rooms.set(docId, new Set());
+  rooms.get(docId)!.add(ws);
+}
+
+function leaveRoom(docId: string, ws: AuthenticatedWebSocket): void {
+  const room = rooms.get(docId);
+  if (!room) return;
+  room.delete(ws);
+  if (room.size === 0) rooms.delete(docId);
+}
+
+function broadcastToRoom(
+  docId: string,
+  message: object,
+  excludeConnectionId: string
+): void {
+  const room = rooms.get(docId);
+  if (!room) return;
+  for (const ws of room) {
+    if (ws.connectionId === excludeConnectionId) continue;
+    safeSend(ws, message);
+  }
+}
+
+function getUserDocIds(userId: string): string[] {
+  const docIds: string[] = [];
+  for (const [docId, room] of rooms) {
+    for (const ws of room) {
+      if (ws.userId === userId) {
+        docIds.push(docId);
+        break;
+      }
+    }
+  }
+  return docIds;
+}
 
 // ── Main dispatcher ───────────────────────────────────────────────────────────
 
@@ -41,8 +72,7 @@ export async function handleMessage(
 export async function handleDisconnect(
   ws: AuthenticatedWebSocket
 ): Promise<void> {
-  const { getUserRooms } = await import('./roomManager.js');
-  const docIds = getUserRooms(ws.userId);
+  const docIds = getUserDocIds(ws.userId);
   for (const docId of docIds) {
     leaveRoom(docId, ws);
   }
@@ -65,34 +95,22 @@ async function handleJoinDoc(
       return;
     }
 
-    let content: string;
-    let frontier: string[];
+    // Add to room
+    joinRoom(docId, ws);
 
-    if (roomExists(docId)) {
-      const walker = getRoomWalker(docId)!;
-      content = walker.getContent();
-      frontier = walker.getFrontier();
-      joinRoom(docId, ws, walker);
-    } else {
-      const result = await replayDocument(docId);
-      content = result.content;
-      frontier = result.walker.getFrontier();
-      joinRoom(docId, ws, result.walker);
-    }
-
-    // Load all events to send to client so it can replay into its own walker
+    // Load all raw events from DB and send to client
+    // Client will replay them through its own EgWalker
     const events = await loadEvents(docId, 0);
 
-    const docStateMessage = {
-      type: 'doc_state' as const,
+    safeSend(ws, {
+      type: 'doc_state',
       docId,
-      content,
-      frontier,
       role,
-      events, // client uses these to build its local EgWalker
-    };
+      events, // client replays these — no content computed server-side
+    });
 
-    safeSend(ws, docStateMessage);
+    // Broadcast updated presence
+    broadcastPresence(docId);
   } catch (err) {
     console.error('handleJoinDoc error:', err);
     safeSend(ws, {
@@ -112,12 +130,18 @@ async function handleOperation(
   try {
     const { docId, event } = message;
 
+    // Check permission
     const role = await getUserRole(ws.userId, docId);
     if (!role || role === 'VIEWER') {
-      safeSend(ws, { type: 'error', message: 'Permission denied', fatal: false });
+      safeSend(ws, {
+        type: 'error',
+        message: 'Permission denied',
+        fatal: false,
+      });
       return;
     }
 
+    // Duplicate guard
     const existing = await prisma.event.findUnique({
       where: { id: event.id },
       select: { id: true },
@@ -128,49 +152,28 @@ async function handleOperation(
       return;
     }
 
-    const walker = getRoomWalker(docId);
-    if (!walker) {
-      safeSend(ws, { type: 'error', message: 'Document room not found — please rejoin', fatal: false });
-      return;
-    }
-
-    // Check if all parents are in the walker graph
-    // If not, reload all events from DB into the walker
-    const missingParent = event.parents.find(
-      parentId => !walker['graph']['events'].has(parentId)
-    );
-
-    if (missingParent) {
-      console.log(`Reloading walker for doc ${docId} — missing parent ${missingParent}`);
-      const { loadEvents } = await import('../services/opService.js');
-      const allEvents = await loadEvents(docId, 0);
-      for (const e of allEvents) {
-        if (!e.op || !e.op.type) continue;
-        if (!walker['graph']['events'].has(e.id)) {
-          walker.applyEvent(e);
-        }
-      }
-    }
-
-    const { transformedOp } = walker.applyEvent(event);
-
+    // Save raw event — no CRDT processing
     await saveEvent(event, docId);
 
+    // Ack to sender
     safeSend(ws, { type: 'ack', eventId: event.id });
 
-    if (transformedOp) {
-      broadcastToRoom(docId, {
-        type: 'op_broadcast',
-        docId,
-        eventId: event.id,
-        transformedOp,
-        clientId: event.clientId,
-        event,
-      }, ws.connectionId);
-    }
+    // Relay raw event to all other clients in the room
+    // Each client applies it through their own EgWalker
+    broadcastToRoom(docId, {
+      type: 'op_broadcast',
+      docId,
+      eventId: event.id,
+      event, // raw event — client processes it
+    }, ws.connectionId);
+
   } catch (err) {
     console.error('handleOperation error:', err);
-    safeSend(ws, { type: 'error', message: 'Failed to process operation', fatal: false });
+    safeSend(ws, {
+      type: 'error',
+      message: 'Failed to process operation',
+      fatal: false,
+    });
   }
 }
 
@@ -181,15 +184,31 @@ function handleCursor(
   docId: string,
   position: number
 ): void {
-  const broadcast: CursorBroadcastMessage = {
+  broadcastToRoom(docId, {
     type: 'cursor_broadcast',
     docId,
     userId: ws.userId,
     username: ws.username,
     position,
     color: ws.color,
-  };
-  broadcastToRoom(docId, broadcast, ws.connectionId);
+  }, ws.connectionId);
+}
+
+// ── Presence ──────────────────────────────────────────────────────────────────
+
+function broadcastPresence(docId: string): void {
+  const room = rooms.get(docId);
+  if (!room) return;
+
+  const users = Array.from(room).map(ws => ({
+    userId: ws.userId,
+    username: ws.username,
+    color: ws.color,
+  }));
+
+  for (const ws of room) {
+    safeSend(ws, { type: 'presence_update', docId, users });
+  }
 }
 
 // ── RBAC helper ───────────────────────────────────────────────────────────────
