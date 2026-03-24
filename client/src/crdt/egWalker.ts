@@ -3,7 +3,6 @@ import { CRDTSequence } from './crdtSequence.js';
 import {
   EffectState,
   PS_INS,
-  PS_NOT_INSERTED,
 } from './types.js';
 
 import type {
@@ -75,8 +74,6 @@ export class EgWalker {
     this.prepareVersion = [event.id];
     this.effectVersion = [event.id];
 
-    //this.checkAndClearState();
-
     return { transformedOp };
   }
 
@@ -142,12 +139,6 @@ export class EgWalker {
       type: 'delete',
       index: transformedIndex,
     };
-  }
-
-  private checkAndClearState(): void {
-    if (this.graph.isCriticalVersion(this.effectVersion)) {
-      this.seq.clearToPlaceholder();
-    }
   }
 
   getContent(): string {

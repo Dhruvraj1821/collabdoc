@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { EgEvent, EventId } from '../crdt/types.js';
+import type { EgEvent } from '../crdt/types.js';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
