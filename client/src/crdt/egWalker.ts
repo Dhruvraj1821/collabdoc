@@ -15,12 +15,14 @@ export class EgWalker {
   private graph: EventGraph;
   private seq: CRDTSequence;
   private prepareVersion: EventId[];
+  private effectVersion: EventId[];
   private deleteTargets: Map<EventId, EventId> = new Map();
 
   constructor() {
     this.graph = new EventGraph();
     this.seq = new CRDTSequence();
     this.prepareVersion = [];
+    this.effectVersion = [];
   }
 
   applyEvent(event: EgEvent): { transformedOp: TransformedOp | null } {
