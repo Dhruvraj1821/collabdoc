@@ -9,6 +9,9 @@ import { createWebSocketServer } from './ws/wsServer.js';
 
 const app = express();
 
+// Trust Render's proxy so express-rate-limit can read X-Forwarded-For correctly
+app.set('trust proxy', 1);
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 
 app.use(cors({ origin: env.CLIENT_URL }));
